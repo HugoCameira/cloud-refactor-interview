@@ -1,0 +1,21 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Initial test suit VPC snapshot 1`] = `
+Object {
+  "vpcA2121C38": Object {
+    "Properties": Object {
+      "CidrBlock": "10.0.0.0/16",
+      "EnableDnsHostnames": true,
+      "EnableDnsSupport": true,
+      "InstanceTenancy": "default",
+      "Tags": Array [
+        Object {
+          "Key": "Name",
+          "Value": "MyTestStack/vpc",
+        },
+      ],
+    },
+    "Type": "AWS::EC2::VPC",
+  },
+}
+`;
