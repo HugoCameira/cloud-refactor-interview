@@ -12,21 +12,22 @@ import {TargetType} from 'aws-cdk-lib/aws-elasticloadbalancingv2'
 
 interface MicroserviceProps extends cdk.StackProps {
   serviceName: string
+  pathToImage: string
   //HTTP Method
   methodType: string,
   //Path after the domain-name
   path: string,
-  //What is returned by the service if valid request
-  serviceResponseSuccess: string,
   //What is returned by the service if illegal request
   serviceResponseFaillure: string
 }
 
-export class MicroServiceStack extends cdk.Stack {
-  constructor (scope: Construct, id: string, props: MicroserviceProps, lb: elb.ApplicationLoadBalancer, vpc: ec2.Vpc) {
+export class MicroServiceCustomImageStack extends cdk.Stack {
+  constructor (scope: Construct, id: string, props: MicroserviceProps) {
     super(scope, id, props)
 
+    const vpc = this.addVpc()
     const cluster = this.addEcsCluster(vpc)
+    const lb = this.addLoadBalancer(vpc)
     this.addServer(cluster, vpc, lb, props)
 
     new cdk.CfnOutput(this, 'lb-endpoint', {
@@ -42,14 +43,10 @@ export class MicroServiceStack extends cdk.Stack {
     })
 
     taskDefinition.addContainer(`${props.serviceName}-server`, {
-      image: ecs.ContainerImage.fromRegistry('pagarme/static-response-server'),
-      environment: {
-        CONTENT_TYPE: 'text/plain',
-        CONTENT_BODY: props.serviceResponseSuccess
-      },
+      image: ecs.ContainerImage.fromAsset(props.pathToImage),
       portMappings: [{
-        containerPort: 8080,
-        hostPort: 25111
+        containerPort: 80,
+        hostPort: 80
       }],
       memoryLimitMiB: 256,
       essential: true
@@ -64,7 +61,14 @@ export class MicroServiceStack extends cdk.Stack {
       vpc,
       port: 25111,
       targetType: TargetType.INSTANCE,
-      protocol: elb.ApplicationProtocol.HTTP
+      protocol: elb.ApplicationProtocol.HTTP,
+      healthCheck: {
+        path: '/health', // Specify the health check endpoint path
+        interval: cdk.Duration.seconds(30), // Health check interval
+        timeout: cdk.Duration.seconds(5), // Health check timeout
+        healthyThresholdCount: 2, // Number of consecutive successful health checks to consider the target healthy
+        unhealthyThresholdCount: 2, // Number of consecutive failed health checks to consider the target unhealthy
+      },
     })
     service.attachToApplicationTargetGroup(applicationTargetGroup)
 
@@ -87,6 +91,17 @@ export class MicroServiceStack extends cdk.Stack {
     })
   }
 
+  private addLoadBalancer (vpc: ec2.Vpc): elb.ApplicationLoadBalancer {
+    const lb = new elb.ApplicationLoadBalancer(this, 'LB', {
+      vpc,
+      internetFacing: true,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PUBLIC
+      }
+    })
+    return lb
+  }
+
   private addEcsCluster (vpc: ec2.Vpc): ecs.Cluster {
     const cluster = new ecs.Cluster(this, 'cluster', {
       vpc,
@@ -101,5 +116,19 @@ export class MicroServiceStack extends cdk.Stack {
       }
     })
     return cluster
+  }
+
+  private addVpc (): ec2.Vpc {
+    const vpc = new ec2.Vpc(this, 'vpc', {
+      maxAzs: 3,
+      subnetConfiguration: [
+        {
+          subnetType: ec2.SubnetType.PUBLIC,
+          name: 'public'
+        }
+      ],
+      natGateways: 0 // https://www.lastweekinaws.com/blog/the-aws-managed-nat-gateway-is-unpleasant-and-not-recommended/ :)
+    })
+    return vpc
   }
 }
